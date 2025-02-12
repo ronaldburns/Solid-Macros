@@ -16,7 +16,7 @@ namespace Solid
 {
 	constexpr std::string_view strip_prefix(std::string_view name)
 	{
-		constexpr std::array<const char*, 2> prefixes = {"struct ", "class "};
+		constexpr std::array<const char*, 3> prefixes = {"struct ", "class ", "enum "};
 		for (const auto* prefix : prefixes)
 		{
 			std::string_view prefix_sv(prefix);
@@ -259,12 +259,8 @@ namespace Solid
 #define CPP_VERSION_23 202300L
 #endif // CPP_VERSION_23
 
-#ifndef INLINE
-#define INLINE inline
-#endif // INLINE
-
 #ifndef OPTIONAL_FORCEINLINE
-#define OPTIONAL_FORCEINLINE INLINE
+#define OPTIONAL_FORCEINLINE inline
 #endif // OPTIONAL_FORCEINLINE
 
 #ifdef LIKELY
@@ -315,7 +311,7 @@ namespace Solid
 
 #if !UE_BUILD_SHIPPING
 
-#define SOLID_INLINE INLINE
+#define SOLID_INLINE inline
 
 #else // WITH_EDITOR || !UE_BUILD_SHIPPING
 
@@ -398,12 +394,14 @@ namespace Solid
 #endif // DEPRECATED_REASON
 
 #ifndef NO_INLINE
-#define NO_INLINE [[msvc::noinline]]
+	#if IS_MSVC
+	#define NO_INLINE DECLSPEC(noinline)
+	#elif IS_GNU || IS_CLANG
+	#define NO_INLINE __attribute__((noinline))
+	#else // IS_GNU || IS_CLANG
+	#define NO_INLINE
+	#endif // IS_MSVC
 #endif // NO_INLINE
-
-#ifndef NO_INLINE_CALLS
-#define NO_INLINE_CALLS [[msvc::noinline_calls]]
-#endif // NO_INLINE_CALLS
 
 #ifndef NO_GUARD
 #define NO_GUARD [[msvc::no_tls_guard]]
@@ -414,7 +412,13 @@ namespace Solid
 #endif // NO_RETURN
 
 #ifndef NO_SANITIZE
-#define NO_SANITIZE(x) [[no_sanitize(x)]]
+	#if HAS_CPP_ATTRIBUTE(no_sanitize)
+	#define NO_SANITIZE(x) [[no_sanitize(x)]]
+	#elif IS_GNU || IS_CLANG
+	#define NO_SANITIZE(x) ATTRIBUTE((no_sanitize(x)))
+	#else // IS_GNU || IS_CLANG
+	#define NO_SANITIZE(x)
+	#endif // HAS_CPP_ATTRIBUTE(no_sanitize)
 #endif // NO_SANITIZE
 
 #ifndef NOEXCEPT
@@ -424,10 +428,6 @@ namespace Solid
 #ifndef NO_EXCEPT
 #define NO_EXCEPT NOEXCEPT
 #endif // NO_EXCEPT
-
-#ifndef CONSTEVAL
-#define CONSTEVAL consteval
-#endif // CONSTEVAL
 
 #ifndef nameof
 #define nameof(x) Solid::type_name<x>()
@@ -496,7 +496,21 @@ namespace Solid
 #endif // CARRIES_DEPENDENCY
 
 #ifndef FLATTEN
-#define FLATTEN [[msvc::flatten]]
+
+	#if IS_MSVC
+
+	#define FLATTEN [[msvc::flatten]]
+
+	#elif IS_GNU || IS_CLANG
+
+	#define FLATTEN __attribute__((flatten))
+
+	#else // IS_GNU || IS_CLANG
+
+	#define FLATTEN
+
+	#endif // IS_MSVC
+
 #endif // FLATTEN
 
 #ifndef INTRINSIC
@@ -520,22 +534,12 @@ namespace Solid
 #endif // COUNTER
 
 #ifndef INTELLISENSE
-#define INTELLISENSE __INTELLISENSE__
+#define INTELLISENSE defined(__INTELLISENSE__)
 #endif // INTELLISENSE
 
-#if defined(__JETBRAINS_IDE__)
-
 #ifndef JETBRAINS_IDE
-#define JETBRAINS_IDE __JETBRAINS_IDE__
+#define JETBRAINS_IDE defined(__JETBRAINS_IDE__)
 #endif // JETBRAINS_IDE
-
-#else // (__JETBRAINS_IDE__)
-
-#ifndef JETBRAINS_IDE
-#define JETBRAINS_IDE 0
-#endif // JETBRAINS_IDE
-
-#endif // (__JETBRAINS_IDE__)
 
 #if JETBRAINS_IDE
 
@@ -570,10 +574,6 @@ namespace Solid
 #ifndef JETBRAINS_PASS_BY_VALUE
 #define JETBRAINS_PASS_BY_VALUE [[jetbrains::pass_by_value]]
 #endif // JETBRAINS_PASS_BY_VALUE
-
-#ifndef ATTRIBUTE_LIST
-#define ATTRIBUTE_LIST attribute_list
-#endif // ATTRIBUTE_LIST
 
 #ifndef REQUIRES
 
@@ -660,6 +660,22 @@ namespace UE::Core::Private
 #define MSVC_WARNING_DISABLE(x) __pragma(warning(disable : x))
 #endif // MSVC_WARNING_DISABLE
 
+#ifndef HOT_CODE_PATH
+	#if IS_CLANG
+	#define HOT_CODE_PATH ATTRIBUTE((hot))
+	#else // IS_CLANG
+	#define HOT_CODE_PATH
+	#endif // IS_CLANG
+#endif // HOT_CODE_PATH
+
+#ifndef COLD_CODE_PATH
+	#if IS_CLANG
+	#define COLD_CODE_PATH ATTRIBUTE((cold))
+	#else // IS_CLANG
+	#define COLD_CODE_PATH
+	#endif // IS_CLANG
+#endif // COLD_CODE_PATH
+
 namespace Solid::detail
 {
 	template<uint32 NumRuns, typename TestT>
@@ -708,29 +724,10 @@ namespace Solid::detail
 #if !UE_BUILD_SHIPPING || USE_CHECKS_IN_SHIPPING
 
 #define solid_check(expr) \
-	{ \
-		if UNLIKELY_IF(!(expr)) \
-		{ \
-			if (FDebug::CheckVerifyFailedImpl2(#expr, __FILE__, __LINE__, TEXT(""))) \
-			{ \
-				PLATFORM_BREAK(); \
-			} \
-			CA_ASSUME(false); \
-		} \
-	}
+	check(expr)
 
 #define solid_checkf(expr, format, ...) \
-	{ \
-		if UNLIKELY_IF(!(expr)) \
-		{ \
-			UE_VALIDATE_FORMAT_STRING(format, ##__VA_ARGS__); \
-			if (FDebug::CheckVerifyFailedImpl2(#expr, __FILE__, __LINE__, format, ##__VA_ARGS__)) \
-			{ \
-				PLATFORM_BREAK(); \
-			} \
-			CA_ASSUME(false); \
-		} \
-	}
+	checkf(expr, format, ##__VA_ARGS__)
 
 #define solid_ensure(expr) ensure(expr)
 #define solid_ensuref(expr, format, ...) ensuref(expr, format, ##__VA_ARGS__)
